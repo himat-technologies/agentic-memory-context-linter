@@ -1,0 +1,14 @@
+import { describe, expect, it } from 'vitest';
+import { estimateTokens } from '../src/lib/tokenEstimator';
+import { analyzeContext } from '../src/lib/contextAnalyzer';
+import { lintMemory } from '../src/lib/memoryLinter';
+import { analyzeDecay } from '../src/lib/decayAnalyzer';
+import { validateAudit } from '../src/lib/auditExporter';
+import type { MemoryEntry, Turn } from '../src/types';
+const turns:Turn[]=[{id:'1',role:'user',content:'Hello'},{id:'2',role:'assistant',content:'Hi there'}];
+const memories:MemoryEntry[]=[{id:'a',key:'tier',value:'pro'},{id:'b',key:'tier',value:'basic'}];
+describe('token estimates',()=>{it('returns zero for empty strings',()=>expect(estimateTokens('  ')).toBe(0));it('returns a positive estimate for text',()=>expect(estimateTokens('hello world')).toBeGreaterThan(0));});
+describe('context analyzer',()=>{it('adds prompt, history, and memory estimates',()=>{const c=analyzeContext('Hello',turns,[],8000);expect(c.total).toBe(c.system+c.history+c.memory);expect(c.exceeded).toBe(false)});it('flags overflow',()=>expect(analyzeContext('x '.repeat(300),[],[],10).exceeded).toBe(true));});
+describe('memory linter',()=>{it('detects conflicting duplicate keys as errors',()=>expect(lintMemory(memories,turns).some(f=>f.severity==='error'&&f.title.includes('Conflicting'))).toBe(true));it('does not flag an empty memory list',()=>expect(lintMemory([],[])).toHaveLength(0));it('distinguishes same-value duplicates as warning',()=>expect(lintMemory([{id:'a',key:'x',value:'same'},{id:'b',key:'x',value:'same'}],[])[0].severity).toBe('warning'));});
+describe('decay analyzer',()=>{it('gives latest turn full recency score and prior turns lower scores',()=>{const d=analyzeDecay(turns,.5);expect(d[1].score).toBe(100);expect(d[0].score).toBeLessThan(d[1].score)});it('handles empty history',()=>expect(analyzeDecay([],0.5)).toHaveLength(0));});
+describe('audit validation',()=>{it('rejects malformed audit shapes',()=>expect(()=>validateAudit({foo:'bar'})).toThrow());it('accepts a supported minimal audit',()=>expect(validateAudit({systemPrompt:'',turns:[],memories:[],capacity:8000}).version).toBe(1));});
